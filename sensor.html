@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Hand Gesture Story</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: Arial, sans-serif;
+      color: #ffd1dc;
+    }
+
+    .app {
+      display: flex;
+      gap: 24px;
+      background: #1a1a1a;
+      padding: 24px;
+      border-radius: 20px;
+      box-shadow: 0 0 30px rgba(255,105,135,0.25);
+    }
+
+    .camera-box {
+      position: relative;
+      width: 640px;
+      height: 480px;
+      border: 3px solid #ff6f91;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 640px;
+      height: 480px;
+      transform: scaleX(-1);
+    }
+
+    #heart {
+      position: absolute;
+      font-size: 42px;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 10;
+      display: none;
+    }
+
+    .content {
+      width: 340px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .title {
+      font-size: 30px;
+      font-weight: bold;
+      color: #ffb3c6;
+      margin-bottom: 12px;
+    }
+
+    .story {
+      font-size: 22px;
+      line-height: 1.5;
+      min-height: 120px;
+      word-wrap: break-word;
+    }
+
+    .hint {
+      font-size: 14px;
+      text-align: center;
+      color: pink;
+      opacity: 0.8;
+    }
+
+    #countdown-img {
+      margin-top: 12px;
+      max-width: 100%;
+      border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div class="camera-box">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+    <div id="heart">❤️</div>
+  </div>
+
+  <div class="content">
+    <div>
+      <div class="title">Untuk kamu…</div>
+      <div id="story" class="story">Ini ada kado untukmu 🎁</div>
+      <img id="countdown-img" src="" alt="" style="display:none;">
+    </div>
+    <div class="hint">Gunakan jempol 👍 atau 👎</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js"></script>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const heart = document.getElementById("heart");
+const story = document.getElementById("story");
+const hint = document.querySelector(".hint");
+const countdownImg = document.getElementById("countdown-img");
+
+canvas.width = 640;
+canvas.height = 480;
+let smoothX = 320;
+let smoothY = 240;
+const smoothing = 0.25;
+
+// === Alur Interaktif ===
+let step = 0; // 0: welcome, 1: konfirmasi jempol, 2: oke kado, 3: countdown
+let countdownNumber = 5;
+let debounce = false; // untuk jeda supaya nggak kebaa
+
+// === Typing effect rapi tanpa nabrak ===
+function typeText(text) {
+  if (!text) return;
+  story.innerText = "";
+  let i = 0;
+  text = text.replace(/\s+/g, ' ').trim(); // hapus spasi berlebih
+  const interval = setInterval(() => {
+    story.innerText += text[i];
+    i++;
+    if (i >= text.length) clearInterval(interval);
+  }, 40);
+}
+
+function showHint(text) {
+  hint.innerText = text;
+}
+
+function showCountdownImage(num) {
+  countdownImg.src = `img/count${num}.png`;
+  countdownImg.style.display = "block";
+}
+
+// === Hitung jari ===
+function countFingers(lm) {
+  let c = 0;
+  if (lm[4].x > lm[3].x) c++;
+  if (lm[8].y < lm[6].y) c++;
+  if (lm[12].y < lm[10].y) c++;
+  if (lm[16].y < lm[14].y) c++;
+  if (lm[20].y < lm[18].y) c++;
+  return c;
+}
+
+// === MediaPipe Hands ===
+const hands = new Hands({
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${file}`
+});
+hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+
+hands.onResults(results => {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (results.multiHandLandmarks?.length) {
+    const lm = results.multiHandLandmarks[0];
+    const palm = lm[9];
+    const tx = (1 - palm.x) * canvas.width;
+    const ty = palm.y * canvas.height;
+    smoothX += (tx - smoothX) * smoothing;
+    smoothY += (ty - smoothY) * smoothing;
+    heart.style.left = smoothX + "px";
+    heart.style.top = smoothY + "px";
+    heart.style.display = "block";
+
+    const fingers = countFingers(lm);
+
+    if (debounce) return; // jeda
+
+    if (step === 0) {
+      if (fingers === 1) { // 👍
+        debounce = true;
+        typeText("Yay! Kado dibuka 🎁");
+        showHint("Tunggu sebentar...");
+        setTimeout(() => { step = 1; debounce = false; showHint("Angkat jempol untuk lanjut"); }, 1500);
+      } else if (fingers === 0) { // 👎
+        debounce = true;
+        typeText("Yakin mau menolak? 😅");
+        showHint("Angkat jempol untuk buka");
+        setTimeout(() => { debounce = false; }, 1000);
+      }
+    } else if (step === 1) {
+      if (fingers === 1) {
+        debounce = true;
+        typeText("Kado ini dibuat oleh Kamal 💌");
+        showHint("Angkat jempol untuk mulai hitung mundur");
+        setTimeout(() => { step = 2; debounce = false; }, 1500);
+      }
+    } else if (step === 2) {
+      if (fingers === 1) {
+        debounce = true;
+        countdownNumber = 5;
+        typeText(`Angka: ${countdownNumber}`);
+        showCountdownImage(countdownNumber);
+        showHint("Gunakan jumlah jari untuk menghitung mundur");
+        setTimeout(() => { step = 3; debounce = false; }, 1500);
+      }
+    } else if (step === 3) {
+      if (fingers === countdownNumber && countdownNumber >= 0) {
+        debounce = true;
+        typeText(`Angka: ${countdownNumber}`);
+        showCountdownImage(countdownNumber);
+        countdownNumber--;
+        setTimeout(() => { debounce = false; }, 1000);
+        if (countdownNumber < 0) {
+          setTimeout(() => { window.location.href = "index.html"; }, 1000);
+        }
+      }
+    }
+
+    drawConnectors(ctx, lm, HAND_CONNECTIONS, { color: "#ff4d6d", lineWidth: 3 });
+    drawLandmarks(ctx, lm, { color: "#ffd1dc", lineWidth: 2 });
+  } else {
+    heart.style.display = "none";
+  }
+});
+
+const camera = new Camera(video, { onFrame: async () => await hands.send({ image: video }), width: 640, height: 480 });
+camera.start();
+</script>
+
+</body>
+</html>
